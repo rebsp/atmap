@@ -37,24 +37,23 @@ def _get_dangerous_phenomena_coef(metar: Metar.Metar):
 def __dangerous_weather(weather: []):
     phenomena = None
     showers = None
-    for weatheri in weather:
-        dgr = 0
+    for intensity, desc, precip, obs, other in weather:
+        ph = 0
         sh = 0
-        (inteni, desci, preci, obsci, otheri) = weatheri
-        if otheri in ["FC", "DS", "SS"] or obsci in ["VA", "SA"] or preci in ["GR", "PL"]:
-            dgr = 24
+        if other in ["FC", "DS", "SS"] or obs in ["VA", "SA"] or precip in ["GR", "PL"]:
+            ph = 24
 
-        if desci == "TS":
-            dgr = 30 if inteni == "+" else 24
+        if desc == "TS":
+            ph = 30 if intensity == "+" else 24
 
-        if preci == "GS":
-            dgr = 18
+        if precip == "GS":
+            ph = 18
 
-        if phenomena is None or dgr > phenomena:
-            phenomena = dgr
+        if phenomena is None or ph > phenomena:
+            phenomena = ph
 
-        if desci == "SH":
-            sh = 1 if inteni == "-" else 2
+        if desc == "SH":
+            sh = 1 if intensity == "-" else 2
 
         if showers is None or showers < sh:
             showers = sh
@@ -65,51 +64,49 @@ def __dangerous_weather(weather: []):
 def __dangerous_clouds(sky: []):
     cb = 0
     tcu = 0
-    for skyi in sky:
-        cbi = 0
-        tcui = 0
-        (cover, height, cloud) = skyi
-
+    for cover, height, cloud in sky:
+        __cb = 0
+        __tcu = 0
         if cover == "OVC":
             if cloud == "TCU":
-                tcui = 10
+                __tcu = 10
 
             if cloud == "CB":
-                cbi = 12
+                __cb = 12
 
         if cover == "BKN":
             if cloud == "TCU":
-                tcui = 8
+                __tcu = 8
 
             if cloud == "CB":
-                cbi = 10
+                __cb = 10
 
         if cover == "SCT":
             if cloud == "TCU":
-                tcui = 5
+                __tcu = 5
 
             if cloud == "CB":
-                cbi = 6
+                __cb = 6
 
         if cover == "FEW":
             if cloud == "TCU":
-                tcui = 3
+                __tcu = 3
 
             if cloud == "CB":
-                cbi = 4
+                __cb = 4
 
-        if cbi > cb:
-            cb = cbi
+        if __cb > cb:
+            cb = __cb
 
-        if tcui > tcu:
-            tcu = tcui
+        if __tcu > tcu:
+            tcu = __tcu
 
     return (cb, tcu, None)
 
 
 def _get_wind_coef(metar: Metar.Metar):
     spd = metar.wind_speed.value()
-    gust = metar.wind_gust.value() if metar.wind_gust is not None else None
+    gusts = metar.wind_gust.value() if metar.wind_gust is not None else None
     coef = 0
 
     if 16 <= spd <= 20:
@@ -121,7 +118,7 @@ def _get_wind_coef(metar: Metar.Metar):
     if spd > 30:
         coef = 4
 
-    if gust is not None:
+    if gusts is not None:
         coef += 1
 
     return coef
@@ -129,23 +126,22 @@ def _get_wind_coef(metar: Metar.Metar):
 
 def _get_precipitation_coef(metar: Metar.Metar):
     coef = 0
-    for weatheri in metar.weather:
-        coefi = 0
-        (inteni, desci, preci, obsci, otheri) = weatheri
-        if desci == "FZ":
-            coefi = 3
+    for intensity, desc, precip, obs, other in metar.weather:
+        __coef = 0
+        if desc == "FZ":
+            __coef = 3
 
-        if preci == "SN":
-            coefi = 2 if inteni == "-" else 3
+        if precip == "SN":
+            __coef = 2 if intensity == "-" else 3
 
-        if preci == "SG" or (preci == "RA" and inteni == "+"):
-            coefi = 2
+        if precip == "SG" or (precip == "RA" and intensity == "+"):
+            __coef = 2
 
-        if preci in ["RA", "UP", "IC", "DZ"]:
-            coefi = 1
+        if precip in ["RA", "UP", "IC", "DZ"]:
+            __coef = 1
 
-        if coefi > coef:
-            coef = coefi
+        if __coef > coef:
+            coef = __coef
 
     return coef
 
@@ -153,25 +149,23 @@ def _get_precipitation_coef(metar: Metar.Metar):
 def _get_freezing_coef(metar: Metar.Metar):
     tt = metar.temp.value()
     dp = metar.dewpt.value()
-    diff = tt - dp
     moisture = None
-    for weatheri in metar.weather:
-        moist = 0
-        (inteni, desci, preci, obsci, otheri) = weatheri
-        if desci == "FZ":
-            moist = 5
+    for intensity, desc, precip, obs, other in metar.weather:
+        __moisture = 0
+        if desc == "FZ":
+            __moisture = 5
 
-        if preci == "SN":
-            moist = 4 if inteni == "-" else 5
+        if precip == "SN":
+            __moisture = 4 if inteni == "-" else 5
 
-        if preci in ["SG", "RASN"] or (preci == "RA" and inteni == "+") or obsci == "BR":
-            moist = 4
+        if precip in ["SG", "RASN"] or (precip == "RA" and intensity == "+") or obs == "BR":
+            __moisture = 4
 
-        if preci in ["DZ", "IC", "RA", "UP", "GR", "GS", "PL"] or obsci == "FG":
-            moist = 3
+        if precip in ["DZ", "IC", "RA", "UP", "GR", "GS", "PL"] or obs == "FG":
+            __moisture = 3
 
-        if moisture is None or moisture < moist:
-            moisture = moist
+        if moisture is None or __moisture > moisture:
+            moisture = __moisture
 
     if tt <= 3 and moisture == 5:
         return 4
@@ -182,7 +176,7 @@ def _get_freezing_coef(metar: Metar.Metar):
     if tt <= 3 and moisture == 4:
         return 3
 
-    if tt <= 3 and (moisture == 3 or diff < 3):
+    if tt <= 3 and (moisture == 3 or (tt - dp) < 3):
         return 1
 
     if tt <= 3 and moisture is None:
@@ -191,7 +185,7 @@ def _get_freezing_coef(metar: Metar.Metar):
     if tt > 3 and moisture is not None:
         return 0
 
-    if tt > 3 and (moisture is None or diff >= 3):
+    if tt > 3 and (moisture is None or (tt - dp) >= 3):
         return 0
 
     return 0
@@ -216,8 +210,7 @@ def _get_visibility_ceiling_coef(metar: Metar.Metar):
 def __get_ceiling(metar: Metar.Metar):
     cld_cover = False
     cld_base = None
-    for skyi in metar.sky:
-        (cover, height, cloud) = skyi
+    for cover, height, cloud in metar.sky:
         if cover in ["BKN", "OVC"]:
             cld_cover = True
 
