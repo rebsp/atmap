@@ -38,25 +38,25 @@ def __dangerous_weather(weather: []):
     phenomena = None
     showers = None
     for intensity, desc, precip, obs, other in weather:
-        ph = 0
-        sh = 0
+        __phenomena = 0
+        __showers = 0
         if other in ["FC", "DS", "SS"] or obs in ["VA", "SA"] or precip in ["GR", "PL"]:
-            ph = 24
+            __phenomena = 24
 
         if desc == "TS":
-            ph = 30 if intensity == "+" else 24
+            __phenomena = 30 if intensity == "+" else 24
 
         if precip == "GS":
-            ph = 18
+            __phenomena = 18
 
-        if phenomena is None or ph > phenomena:
-            phenomena = ph
+        if phenomena is None or __phenomena > phenomena:
+            phenomena = __phenomena
 
         if desc == "SH":
-            sh = 1 if intensity == "-" else 2
+            __showers = 1 if intensity == "-" else 2
 
-        if showers is None or showers < sh:
-            showers = sh
+        if showers is None or __showers > showers:
+            showers = __showers
 
     return (phenomena, showers)
 
