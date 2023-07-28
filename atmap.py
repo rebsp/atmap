@@ -1,7 +1,7 @@
 import re
 from typing import Union
 from avwx import Metar, Taf
-from avwx.structs import MetarData, TafLineData, Units
+from avwx.structs import MetarData, TafData, TafLineData, Units
 
 
 class Atmap:
@@ -40,10 +40,10 @@ class Atmap:
     @classmethod
     def _get_taf(cls, taf: Taf):
         r = []
-        min_temp = Atmap._parse_min_temp(taf.data.min_temp)
+        min_temp = Atmap._parse_min_temp(taf.data)
         for data in taf.data.forecast:
             obj = cls(data=data, units=taf.units, min_temp=min_temp)
-            r.append({"probability": data.probability.value if data.probability is not None else None, "atmap": obj})
+            r.append({"start_time": data.start_time.dt, "end_time": data.end_time.dt, "probability": data.probability.value if data.probability is not None else None, "atmap": obj})
         return r
 
     @property
@@ -67,8 +67,12 @@ class Atmap:
         return self._get_dangerous_phenomena_coef()
 
     @staticmethod
-    def _parse_min_temp(taf_min_temp: str):
-        tmp_search = re.search(r"^(?P<temp>(TN(M)?(\d{1,2})))", taf_min_temp)
+    def _parse_min_temp(taf_data: TafData):
+        temp = taf_data.min_temp if taf_data.min_temp is not None else taf_data.max_temp
+        if (temp is None):
+            return None
+
+        tmp_search = re.search(r"^(?P<temp>(TN(M)?(\d{1,2})))", temp)
         _, min_temp = tmp_search.group(1, 4)
         min_temp = float(min_temp)
         if (tmp_search.group(1, 3)[1] is not None):
@@ -89,6 +93,9 @@ class Atmap:
         return weather
     
     def _get_dangerous_phenomena_coef(self):
+        if (not self._assert_cloud_data()):
+            return None
+
         phenomena, showers = self.__dangerous_weather()
         cb, tcu, ts = self.__dangerous_clouds()
         if showers is not None and showers > 0:
@@ -108,6 +115,9 @@ class Atmap:
                 ts = 4 if showers == 1 else 6
 
         return max(i for i in [phenomena, cb, tcu, ts] if i is not None)
+    
+    def _assert_cloud_data(self):
+        return self.data.clouds is not None
 
     def __dangerous_weather(self):
         phenomena = None
@@ -178,6 +188,9 @@ class Atmap:
         return (cb, tcu, None)
 
     def _get_wind_coef(self):
+        if (not self._assert_wind_data()):
+            return None
+            
         spd = self.data.wind_speed.value
         gusts = self.data.wind_gust.value if self.data.wind_gust is not None else None
         if (self.units.wind_speed == "kmh"):
@@ -201,6 +214,9 @@ class Atmap:
             coef += 1
 
         return coef
+    
+    def _assert_wind_data(self):
+        return self.data.wind_speed is not None
 
     def _get_precipitation_coef(self):
         coef = 0
@@ -224,6 +240,9 @@ class Atmap:
         return coef
 
     def _get_freezing_coef(self):
+        if (not self._assert_temperature_data()):
+            return None
+
         tt = self.data.temperature.value if type(self.data) == MetarData else self.min_temp
         dp = self.data.dewpoint.value if type(self.data) == MetarData else None
         moisture = None
@@ -266,8 +285,14 @@ class Atmap:
             return 0
 
         return 0
+    
+    def _assert_temperature_data(self):
+        return self.data.temperature is not None or self.min_temp is not None
 
     def _get_visibility_ceiling_coef(self):
+        if (not self._assert_visibility_data()):
+            return None
+
         vis = self.__get_visibility()
         cld_base = self.__get_ceiling()
 
@@ -281,6 +306,9 @@ class Atmap:
             return 2
 
         return 0
+    
+    def _assert_visibility_data(self):
+        return self.data.visibility is not None and self.data.clouds is not None
 
     def __get_ceiling(self):
         cld_base = None
