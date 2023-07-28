@@ -287,7 +287,10 @@ class Atmap:
         return 0
     
     def _assert_temperature_data(self):
-        return self.data.temperature is not None or self.min_temp is not None
+        if (type(self.data) == MetarData):
+            return self.data.temperature is not None
+
+        return self.min_temp is not None
 
     def _get_visibility_ceiling_coef(self):
         if (not self._assert_visibility_data()):
