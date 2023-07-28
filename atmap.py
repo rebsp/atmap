@@ -1,28 +1,50 @@
 import re
+from typing import Union
 from avwx import Metar, Taf
-from avwx.structs import MetarData, TafData
+from avwx.structs import MetarData, TafLineData, Units
 
 
 class Atmap:
-    def __init__(self, metar: Metar=None, taf: Taf=None):
-        self.metar = metar
-        self.taf = taf
-        self.data = self.metar.data
-        self.units = self.metar.units
+    def __init__(self, data: Union[MetarData, TafLineData], units: Units, min_temp: float = None):
+        self.data = data
+        self.units = units
+        self.min_temp = min_temp
         self.wx = self._parse_wx()
 
     @classmethod
     def from_metar(cls, report: str):
         report = report.strip()
-        obj = cls(metar=Metar.from_report(report))
+        m = Metar.from_report(report)
+        obj = cls(data=m.data, units=m.units)
         return obj
 
     @classmethod
-    def from_taf(cls, report: str):
-        #TODO
-        report = report.strip()
-        obj = cls(taf=Taf.from_report(report))
+    def metar(cls, station: str):
+        m = Metar(station)
+        m.update()
+        obj = cls(data=m.data, units=m.units)
         return obj
+
+    @classmethod
+    def taf(cls, station: str):
+        t = Taf(station)
+        t.update()
+        return cls._get_taf(t)
+
+    @classmethod
+    def from_taf(cls, report: str):
+        report = report.strip()
+        t = Taf.from_report(report)
+        return cls._get_taf(t)
+    
+    @classmethod
+    def _get_taf(cls, taf: Taf):
+        r = []
+        min_temp = Atmap._parse_min_temp(taf.data.min_temp)
+        for data in taf.data.forecast:
+            obj = cls(data=data, units=taf.units, min_temp=min_temp)
+            r.append({"probability": data.probability.value if data.probability is not None else None, "atmap": obj})
+        return r
 
     @property
     def ceiling(self):
@@ -43,6 +65,16 @@ class Atmap:
     @property
     def phenomena(self):
         return self._get_dangerous_phenomena_coef()
+
+    @staticmethod
+    def _parse_min_temp(taf_min_temp: str):
+        tmp_search = re.search(r"^(?P<temp>(TN(M)?(\d{1,2})))", taf_min_temp)
+        _, min_temp = tmp_search.group(1, 4)
+        min_temp = float(min_temp)
+        if (tmp_search.group(1, 3)[1] is not None):
+            min_temp = min_temp * -1
+        
+        return min_temp
 
     def _parse_wx(self):
         weather = []
@@ -77,7 +109,6 @@ class Atmap:
 
         return max(i for i in [phenomena, cb, tcu, ts] if i is not None)
 
-
     def __dangerous_weather(self):
         phenomena = None
         showers = None
@@ -103,7 +134,6 @@ class Atmap:
                 showers = __showers
 
         return (phenomena, showers)
-
 
     def __dangerous_clouds(self):
         cb = 0
@@ -147,7 +177,6 @@ class Atmap:
 
         return (cb, tcu, None)
 
-
     def _get_wind_coef(self):
         spd = self.data.wind_speed.value
         gusts = self.data.wind_gust.value if self.data.wind_gust is not None else None
@@ -173,7 +202,6 @@ class Atmap:
 
         return coef
 
-
     def _get_precipitation_coef(self):
         coef = 0
         for intensity, desc, precip, obs, other in self.wx:
@@ -195,10 +223,9 @@ class Atmap:
 
         return coef
 
-
     def _get_freezing_coef(self):
-        tt = self.data.temperature.value
-        dp = self.data.dewpoint.value
+        tt = self.data.temperature.value if type(self.data) == MetarData else self.min_temp
+        dp = self.data.dewpoint.value if type(self.data) == MetarData else None
         moisture = None
         for intensity, desc, precip, obs, other in self.wx:
             __moisture = None
@@ -226,7 +253,7 @@ class Atmap:
         if tt <= 3 and moisture == 4:
             return 3
 
-        if tt <= 3 and (moisture == 3 or (tt - dp) < 3):
+        if tt <= 3 and (moisture == 3 or (dp is not None and (tt - dp) < 3)):
             return 1
 
         if tt <= 3 and moisture is None:
@@ -235,26 +262,25 @@ class Atmap:
         if tt > 3 and moisture is not None:
             return 0
 
-        if tt > 3 and (moisture is None or (tt - dp) >= 3):
+        if tt > 3 and (moisture is None or (dp is not None and (tt - dp) >= 3)):
             return 0
 
         return 0
 
-
     def _get_visibility_ceiling_coef(self):
         vis = self.__get_visibility()
         cld_base = self.__get_ceiling()
-        if (vis <= 325) or cld_base <= 50:
+
+        if (vis <= 325) or (cld_base is not None and cld_base <= 50):
             return 5
 
-        if (350 <= vis <= 500) or 100 <= cld_base <= 150:
+        if (350 <= vis <= 500) or (cld_base is not None and 100 <= cld_base <= 150):
             return 4
 
-        if (550 <= vis <= 750) or 200 <= cld_base <= 250:
+        if (550 <= vis <= 750) or (cld_base is not None and 200 <= cld_base <= 250):
             return 2
 
         return 0
-
 
     def __get_ceiling(self):
         cld_base = None
@@ -264,11 +290,14 @@ class Atmap:
             if cloud.type == "VV" and cloud.base is None:
                 cld_base = 0
 
-        return cld_base * 100
+        return cld_base * 100 if cld_base is not None else None
 
     def __get_visibility(self):
         vis = self.data.visibility.value
         rvr = None
+        if (type(self.data) == TafLineData):
+            return vis
+            
         for runway in self.data.runway_visibility:
             if runway.visibility is not None and (rvr is None or rvr > runway.visibility.value):
                 rvr = runway.visibility.value
